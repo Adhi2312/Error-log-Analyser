@@ -1,70 +1,202 @@
-# Getting Started with Create React App
+# 🚀 Error Log Analyzer
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+> AI-powered log analysis platform that extracts, redacts, and analyzes software errors from log files using a modern full-stack architecture.
 
-## Available Scripts
+![React](https://img.shields.io/badge/React-19-blue)
+![Node](https://img.shields.io/badge/Node.js-Express-green)
+![Postgres](https://img.shields.io/badge/PostgreSQL-Database-blue)
+![Redis](https://img.shields.io/badge/Redis-BullMQ-red)
+![Docker](https://img.shields.io/badge/Docker-Compose-blue)
 
-In the project directory, you can run:
+---
 
-### `npm start`
+## 📖 Overview
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Error Log Analyzer is a full-stack application that helps developers quickly inspect log files by:
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+- Uploading log/text files
+- Detecting error entries
+- Redacting sensitive information
+- Generating structured AI-assisted analysis
+- Supporting asynchronous processing using BullMQ and Redis
 
-### `npm test`
+---
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## ✨ Features
 
-### `npm run build`
+- 📂 Drag & Drop file upload
+- 🔍 Error extraction from logs
+- 🔒 Sensitive data redaction
+- 🤖 AI-assisted root cause analysis
+- ⚡ Background processing using BullMQ
+- 💾 PostgreSQL persistence
+- 🎨 Responsive React UI
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+---
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## 🏗️ Architecture
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+```text
+                +----------------------+
+                |      React UI        |
+                +----------+-----------+
+                           |
+                     Axios API Calls
+                           |
+                +----------v-----------+
+                |    Express Server    |
+                +----------+-----------+
+                           |
+        +------------------+------------------+
+        |                  |                  |
+        |                  |                  |
+     Parser           Redactor          Upload Service
+        |                  |
+        +---------+--------+
+                  |
+             BullMQ Queue
+                  |
+             Redis Worker
+                  |
+           AI Analysis Engine
+                  |
+             PostgreSQL DB
+```
 
-### `npm run eject`
+---
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## 🛠️ Tech Stack
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+### Frontend
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+- React
+- Tailwind CSS
+- Axios
+- React Icons
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+### Backend
 
-## Learn More
+- Node.js
+- Express.js
+- Multer
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+### Database
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+- PostgreSQL
 
-### Code Splitting
+### Queue
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+- Redis
+- BullMQ
 
-### Analyzing the Bundle Size
+### AI
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+- Configurable LLM API
+- HuggingFace (Optional)
 
-### Making a Progressive Web App
+### DevOps
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+- Docker
+- Docker Compose
 
-### Advanced Configuration
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## 📁 Project Structure
 
-### Deployment
+```text
+ERROR-LOG-ANALYZER/
+│
+├── backend/
+│   ├── src/
+│   │   ├── db/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   ├── db.js
+│   │   ├── queue.js
+│   │   ├── server.js
+│   │   └── worker.js
+│   │
+│   ├── uploads/
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── package.json
+│   └── package-lock.json
+│
+├── documents/
+│
+├── Frontend/
+│   ├── src/
+│   ├── public/
+│   ├── package.json
+│   └── package-lock.json
+│
+├── .gitignore
+└── README.md
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+---
 
-### `npm run build` fails to minify
+## ⚙️ How It Works
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+1. Upload a log file.
+2. Backend parses the log.
+3. Errors are extracted.
+4. Sensitive information is redacted.
+5. Preview is displayed.
+6. User selects an error.
+7. AI analyzes the selected error.
+8. Results are displayed.
+9. Analysis is stored for future reference.
+
+---
+
+## 🚀 Getting Started
+
+### Clone
+
+```bash
+git clone https://github.com/Adhi2312/Error-log-Analyser.git
+cd ERROR-LOG-ANALYZER
+```
+
+### Backend
+
+```bash
+cd Backend
+npm install
+npm start
+```
+
+### Frontend
+
+```bash
+cd Frontend
+npm install
+npm start
+```
+
+---
+
+## 🐳 Docker
+
+```bash
+docker compose up --build
+```
+
+
+
+
+
+---
+
+## 👥 Contributors
+
+
+
+###  [Adhilingavignesh K](https://github.com/Adhi2312)
+###  [Prithiv Raj K](https://github.com/Prithivraj22)
+
+
+
+---
+
