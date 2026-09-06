@@ -34,6 +34,7 @@ router.get("/uploads/:id/errors", async (req, res) => {
 
 // Get analysis for one error
 router.get("/errors/:id/analysis", async (req, res) => {
+  console.log("Fetching analysis for error ID:", req.params.id);
   const errorId = parseInt(req.params.id, 10);
   if (Number.isNaN(errorId)) return res.status(400).json({ error: "invalid_error_id" });
   try {

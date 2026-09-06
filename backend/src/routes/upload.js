@@ -23,6 +23,7 @@ const upload = multer({
 
 router.post("/", upload.single("file"), async (req, res) => {
   const file = req.file;
+  console.log("Received file:", file ? file.originalname : "none");
   if (!file) return res.status(400).json({ error: "no file" });
 
   try {
@@ -38,16 +39,35 @@ router.post("/", upload.single("file"), async (req, res) => {
       const uploadId = insertUpload.rows[0].id;
 
       const errorEntries = parseLogFile(content); // [{ line_number, raw_text }]
-      for (const e of errorEntries) {
-        const r = await client.query(
-          "INSERT INTO errors (upload_id, line_number, raw_text) VALUES ($1,$2,$3) RETURNING id",
-          [uploadId, e.line_number, e.raw_text]
-        );
-        const errorId = r.rows[0].id;
-        await enqueueError({ errorId, raw_text: e.raw_text });
-      }
+      const createdErrors = [];
 
-      res.json({ uploadId, totalErrors: errorEntries.length });
+for (const e of errorEntries) {
+  const r = await client.query(
+    `INSERT INTO errors
+     (upload_id, line_number, raw_text)
+     VALUES ($1, $2, $3)
+     RETURNING id, line_number`,
+    [uploadId, e.line_number, e.raw_text]
+  );
+
+  const errorId = r.rows[0].id;
+
+  createdErrors.push({
+    id: errorId,
+    line_number: r.rows[0].line_number
+  });
+
+  await enqueueError({
+    errorId,
+    raw_text: e.raw_text
+  });
+}
+
+res.json({
+  uploadId,
+  totalErrors: createdErrors.length,
+  errors: createdErrors
+});
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "server_error" });

@@ -8,6 +8,7 @@
     "worker": "node src/worker.js"
   },
   "dependencies": {
+    "@google/genai": "^2.21.0",
     "axios": "^1.4.0",
     "bullmq": "^1.71.0",
     "cors": "^2.8.5",
