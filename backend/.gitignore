@@ -1,1 +1,9 @@
 .env
+node_modules/
+
+.env.*
+!.env.example
+uploads/*
+!uploads/.gitkeep
+build/
+dist/
