@@ -3,6 +3,14 @@ function redact(text) {
   let t = text;
   t = t.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "<REDACTED_EMAIL>");
   t = t.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "<REDACTED_IP>");
+  t = t.replace(
+    /(\b(?:phone|mobile|telephone|tel)\s*[:=]\s*)(?:\+?\d[\d\s()-]{7,}\d)/gi,
+    "$1<REDACTED_PHONE>"
+  );
+  t = t.replace(
+    /(\bAuthorization\s*:\s*Bearer\s+)[^\s]+/gi,
+    "$1<REDACTED_TOKEN>"
+  );
   t = t.replace(/[A-Za-z]:\\[^\s]*/g, "<REDACTED_PATH>");
   t = t.replace(/\/[^\s]*/g, "<REDACTED_PATH>");
   t = t.replace(/(?<=\b(api_key|token|secret|password)\b[:=]\s*)([A-Za-z0-9\-_\.]{8,})/gi, "<REDACTED_SECRET>");
