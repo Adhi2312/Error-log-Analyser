@@ -3,7 +3,7 @@ const IORedis = require("ioredis");
 const { redact } = require("./services/redactor");
 const { computeFingerprint } = require("./services/fingerprint");
 const { getCachedAnalysis, setCachedAnalysis } = require("./services/cache");
-const { callLLM } = require("./services/llmClient");
+const { callLLM, getLLMIdentity } = require("./services/llmClient");
 const { createProcessErrorJob } = require("./services/processErrorJob");
 const { pool } = require("./db");
 
@@ -13,6 +13,9 @@ function positiveInteger(value, fallback) {
 }
 
 const concurrency = positiveInteger(process.env.WORKER_CONCURRENCY, 2);
+const llmIdentity = getLLMIdentity();
+const modelCacheKey = (fingerprint) =>
+  `${llmIdentity.provider}:${llmIdentity.model}:${fingerprint}`;
 const connection = new IORedis(
   process.env.REDIS_URL || "redis://redis:6379",
   { maxRetriesPerRequest: null }
@@ -22,8 +25,9 @@ const processErrorJob = createProcessErrorJob({
   pool,
   redact,
   computeFingerprint,
-  getCachedAnalysis,
-  setCachedAnalysis,
+  getCachedAnalysis: (fingerprint) => getCachedAnalysis(modelCacheKey(fingerprint)),
+  setCachedAnalysis: (fingerprint, analysis) =>
+    setCachedAnalysis(modelCacheKey(fingerprint), analysis),
   callLLM,
 });
 
@@ -44,6 +48,8 @@ worker.on("error", (error) => {
   console.error("Worker connection error:", error);
 });
 
-console.log(`Error worker started with concurrency ${concurrency}`);
+console.log(
+  `Error worker started with concurrency ${concurrency} using ${llmIdentity.provider}/${llmIdentity.model}`
+);
 
 module.exports = { worker };

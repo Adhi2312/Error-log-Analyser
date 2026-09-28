@@ -1,10 +1,7 @@
+const axios = require("axios");
 
-const { GoogleGenAI } = require("@google/genai");
-
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+const DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+const DEFAULT_NVIDIA_MODEL = "openai/gpt-oss-20b";
 
 function buildPrompt(redactedText) {
   return `You are a log analyzer.
@@ -36,7 +33,10 @@ Here is the redacted error log:
 }
 
 function parseLLMResponse(text) {
-  // Remove markdown code fences if Gemini happens to return them
+  if (typeof text !== "string" || text.trim() === "") {
+    throw new Error("NVIDIA NIM returned an empty response");
+  }
+
   const cleaned = text
     .replace(/```json/gi, "")
     .replace(/```/g, "")
@@ -44,66 +44,100 @@ function parseLLMResponse(text) {
 
   try {
     return JSON.parse(cleaned);
-  } catch (error) {
-    // Fallback: try to extract JSON from the response
+  } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
-
-    if (!match) {
-      return {
-        issue_type: "unknown",
-        root_cause: cleaned.slice(0, 256),
-        suggested_fix: "",
-        severity: "Medium",
-        confidence: 0.5,
-        raw: cleaned,
-      };
-    }
+    if (!match) throw new Error("NVIDIA NIM returned invalid JSON");
 
     try {
       return JSON.parse(match[0]);
-    } catch (error) {
-      return {
-        issue_type: "parse_error",
-        root_cause: cleaned.slice(0, 256),
-        suggested_fix: "",
-        severity: "Medium",
-        confidence: 0.5,
-        raw: cleaned,
-      };
+    } catch {
+      throw new Error("NVIDIA NIM returned invalid JSON");
     }
   }
 }
 
-async function callLLM(redactedText) {
-  console.log("Calling LLM with redacted text:", redactedText);
-
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is not configured");
+function getLLMIdentity(env = process.env) {
+  const provider = (env.LLM_PROVIDER || "nvidia").toLowerCase();
+  if (provider !== "nvidia") {
+    throw new Error(`Unsupported LLM_PROVIDER: ${provider}`);
   }
 
-  const prompt = buildPrompt(redactedText);
-
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
-
-    const output = response.text;
-
-    const parsed = parseLLMResponse(output);
-
-    parsed.model = "gemini-2.5-flash";
-    console.log("LLM analysis result:", parsed);
-    return parsed;
-  } catch (error) {
-    console.error("Gemini API error:", error.message);
-
-    throw new Error("Failed to analyze log using Gemini");
-  }
+  return {
+    provider: "nvidia-nim",
+    model: env.NVIDIA_NIM_MODEL || DEFAULT_NVIDIA_MODEL,
+    baseURL: (env.NVIDIA_NIM_BASE_URL || DEFAULT_NVIDIA_BASE_URL).replace(/\/+$/, ""),
+  };
 }
 
-module.exports = { callLLM };
+function positiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function createLLMClient({
+  httpClient = axios,
+  env = process.env,
+  logger = console,
+} = {}) {
+  return async function callNvidiaNim(redactedText) {
+    if (!env.NVIDIA_API_KEY) {
+      throw new Error("NVIDIA_API_KEY is not configured");
+    }
+
+    const identity = getLLMIdentity(env);
+    const timeout = positiveInteger(env.NVIDIA_NIM_TIMEOUT_MS, 45000);
+
+    try {
+      const response = await httpClient.post(
+        `${identity.baseURL}/chat/completions`,
+        {
+          model: identity.model,
+          messages: [{ role: "user", content: buildPrompt(redactedText) }],
+          temperature: 0.1,
+          max_tokens: 800,
+          reasoning_effort: "low",
+          stream: false,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${env.NVIDIA_API_KEY}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          timeout,
+        }
+      );
+
+      const output = response.data?.choices?.[0]?.message?.content;
+      const parsed = parseLLMResponse(output);
+      parsed.provider = identity.provider;
+      parsed.model = response.data?.model || identity.model;
+      return parsed;
+    } catch (error) {
+      const status = error.response?.status;
+      const providerMessage = error.response?.data?.detail
+        || error.response?.data?.message
+        || error.message;
+      logger.error(
+        "NVIDIA NIM API error:",
+        status ? `HTTP ${status}` : "request_failed",
+        providerMessage
+      );
+      throw new Error(
+        status
+          ? `NVIDIA NIM request failed with HTTP ${status}`
+          : "NVIDIA NIM request failed"
+      );
+    }
+  };
+}
+
+const callLLM = createLLMClient();
+
+module.exports = {
+  buildPrompt,
+  callLLM,
+  createLLMClient,
+  getLLMIdentity,
+  parseLLMResponse,
+};
