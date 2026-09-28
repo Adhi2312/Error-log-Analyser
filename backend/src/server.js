@@ -6,7 +6,6 @@ const uploadRouter = require("./routes/upload");
 const dashboardRouter = require("./routes/dashboard");
 const previewRouter = require("./routes/preview");
 const analyzeRouter = require("./routes/analyze");
-const workerStarter = require("./worker"); // if you still use it
 
 const app = express();
 

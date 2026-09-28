@@ -1,6 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
+const { ensureErrorQueued } = require("../queue");
+const { createBatchHandlers } = require("./batchHandlers");
+
+const batchHandlers = createBatchHandlers({ pool, ensureErrorQueued });
 
 // List uploads
 router.get("/uploads", async (req, res) => {
@@ -13,24 +17,10 @@ router.get("/uploads", async (req, res) => {
   }
 });
 
-// List errors for an upload
-router.get("/uploads/:id/errors", async (req, res) => {
-  const uploadId = parseInt(req.params.id, 10);
-  if (Number.isNaN(uploadId)) return res.status(400).json({ error: "invalid_upload_id" });
-  try {
-    const q = await pool.query(
-      `SELECT id, line_number, processed_at, fingerprint
-       FROM errors
-       WHERE upload_id = $1
-       ORDER BY id`,
-      [uploadId]
-    );
-    res.json(q.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "db_error" });
-  }
-});
+router.get("/uploads/:id/status", batchHandlers.getUploadStatus);
+router.get("/uploads/:id/errors", batchHandlers.listUploadErrors);
+router.post("/uploads/:id/retry", batchHandlers.retryUpload);
+router.post("/errors/:id/retry", batchHandlers.retryError);
 
 // Get analysis for one error
 router.get("/errors/:id/analysis", async (req, res) => {
