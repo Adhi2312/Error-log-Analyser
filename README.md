@@ -24,12 +24,13 @@ Error Log Analyzer is a full-stack application that helps developers quickly ins
 
 ## ✨ Features
 
-- 📂 Drag & Drop file upload
+- 📂 Log file upload and error preview
 - 🔍 Error extraction from logs
 - 🔒 Sensitive data redaction
 - 🤖 AI-assisted root cause analysis
 - ⚡ Background processing using BullMQ
 - 💾 PostgreSQL persistence
+- 🔄 Automatic versioned database migrations
 - 🎨 Responsive React UI
 
 ---
@@ -91,8 +92,8 @@ Error Log Analyzer is a full-stack application that helps developers quickly ins
 
 ### AI
 
-- Configurable LLM API
-- HuggingFace (Optional)
+- NVIDIA NIM hosted inference API
+- Configurable NVIDIA model and endpoint
 
 ### DevOps
 
@@ -143,9 +144,9 @@ ERROR-LOG-ANALYZER/
 3. Errors are extracted.
 4. Sensitive information is redacted.
 5. Preview is displayed.
-6. User selects an error.
-7. AI analyzes the selected error.
-8. Results are displayed.
+6. Every detected error is queued for background processing.
+7. Workers analyze errors independently.
+8. Batch progress and individual results are displayed.
 9. Analysis is stored for future reference.
 
 ---
@@ -164,8 +165,12 @@ cd ERROR-LOG-ANALYZER
 ```bash
 cd Backend
 npm install
+npm run migrate
 npm start
 ```
+
+Copy `backend/.env.example` to `backend/.env` and set `NVIDIA_API_KEY` before
+starting the worker. The default hosted model is `openai/gpt-oss-20b`.
 
 ### Frontend
 
@@ -180,8 +185,20 @@ npm start
 ## 🐳 Docker
 
 ```bash
-docker compose up --build
+docker compose -f backend/docker-compose.yml up --build
 ```
+
+The API and worker run all pending migrations before they start. Applied files are
+recorded in the `schema_migrations` table and will not run again. To apply migrations
+without starting the application:
+
+```bash
+docker compose -f backend/docker-compose.yml run --rm backend npm run migrate
+```
+
+Create new migrations in `backend/src/db/migrations` using the next three-digit
+prefix, for example `003_add_upload_owner.sql`. Never edit a migration after it has
+been applied; add a new migration instead.
 
 
 
