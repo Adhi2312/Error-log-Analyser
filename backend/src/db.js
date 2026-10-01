@@ -1,5 +1,8 @@
 const { Pool } = require("pg");
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is required. Set it in backend/.env or the hosting environment.");
+}
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres:postgres@postgres:5432/dev"
+  connectionString: process.env.DATABASE_URL
 });
 module.exports = { pool };

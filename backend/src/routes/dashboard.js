@@ -1,10 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
-const { ensureErrorQueued } = require("../queue");
+const { getAnalysisMode } = require("../analysisMode");
 const { createBatchHandlers } = require("./batchHandlers");
 
-const batchHandlers = createBatchHandlers({ pool, ensureErrorQueued });
+const processingMode = getAnalysisMode();
+const ensureErrorQueued = processingMode === "queue"
+  ? require("../queue").ensureErrorQueued
+  : undefined;
+const batchHandlers = createBatchHandlers({ pool, ensureErrorQueued, processingMode });
 
 // List uploads
 router.get("/uploads", async (req, res) => {
@@ -19,8 +23,22 @@ router.get("/uploads", async (req, res) => {
 
 router.get("/uploads/:id/status", batchHandlers.getUploadStatus);
 router.get("/uploads/:id/errors", batchHandlers.listUploadErrors);
-router.post("/uploads/:id/retry", batchHandlers.retryUpload);
-router.post("/errors/:id/retry", batchHandlers.retryError);
+if (processingMode === "queue") {
+  router.post("/uploads/:id/retry", batchHandlers.retryUpload);
+  router.post("/errors/:id/retry", batchHandlers.retryError);
+} else {
+  const { redact } = require("../services/redactor");
+  const { computeFingerprint } = require("../services/fingerprint");
+  const { callLLM } = require("../services/llmClient");
+  const { createDirectAnalysisHandler } = require("./directAnalysisHandler");
+
+  router.post("/errors/:id/analyze", createDirectAnalysisHandler({
+    pool,
+    redact,
+    computeFingerprint,
+    callLLM,
+  }));
+}
 
 // Get analysis for one error
 router.get("/errors/:id/analysis", async (req, res) => {

@@ -123,6 +123,11 @@ function createLLMClient({
         status ? `HTTP ${status}` : "request_failed",
         providerMessage
       );
+      if (status === 410) {
+        throw new Error(
+          "NVIDIA API returned HTTP 410 (Gone). Check this account's Public API Endpoints access with NVIDIA."
+        );
+      }
       throw new Error(
         status
           ? `NVIDIA NIM request failed with HTTP ${status}`

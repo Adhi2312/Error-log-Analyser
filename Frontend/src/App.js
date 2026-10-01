@@ -11,6 +11,7 @@ import {
   FaTimesCircle,
 } from 'react-icons/fa';
 import {
+  analyzeErrorDirect,
   getApiErrorMessage,
   getBatchSnapshot,
   getErrorAnalysis,
@@ -20,6 +21,15 @@ import {
   startBatchAnalysis,
 } from './api';
 import { isTerminalBatchStatus, monitorBatch } from './batchMonitor';
+import { processDirectBatch } from './directBatch';
+
+const LAST_DIRECT_UPLOAD_KEY = 'error-log-analyser:last-direct-upload';
+
+function forgetDirectUpload(uploadId) {
+  if (window.localStorage.getItem(LAST_DIRECT_UPLOAD_KEY) === String(uploadId)) {
+    window.localStorage.removeItem(LAST_DIRECT_UPLOAD_KEY);
+  }
+}
 
 const STATUS_STYLES = {
   pending: 'bg-slate-100 text-slate-600',
@@ -164,14 +174,24 @@ function App() {
   const [retryingBatch, setRetryingBatch] = useState(false);
   const [message, setMessage] = useState(null);
   const monitorRef = useRef(null);
+  const directRef = useRef(null);
   const analysisRequestRef = useRef(0);
+  const runGenerationRef = useRef(0);
 
   const stopMonitoring = useCallback(() => {
     monitorRef.current?.abort();
     monitorRef.current = null;
   }, []);
 
-  useEffect(() => stopMonitoring, [stopMonitoring]);
+  const stopDirect = useCallback(() => {
+    directRef.current?.abort();
+    directRef.current = null;
+  }, []);
+
+  useEffect(() => () => {
+    stopMonitoring();
+    stopDirect();
+  }, [stopMonitoring, stopDirect]);
 
   const applySnapshot = useCallback((snapshot) => {
     setSummary(snapshot.summary);
@@ -213,8 +233,72 @@ function App() {
     });
   }, [applySnapshot, stopMonitoring]);
 
-  const resetRun = useCallback(() => {
+  const beginDirect = useCallback((uploadId, retryFailed = false) => {
     stopMonitoring();
+    stopDirect();
+    const controller = new AbortController();
+    directRef.current = controller;
+    window.localStorage.setItem(LAST_DIRECT_UPLOAD_KEY, String(uploadId));
+    setPolling(true);
+    setMessage(null);
+
+    processDirectBatch({
+      uploadId,
+      getSnapshot: getBatchSnapshot,
+      analyzeError: analyzeErrorDirect,
+      onSnapshot: applySnapshot,
+      retryFailed,
+      signal: controller.signal,
+    }).then((result) => {
+      if (controller.signal.aborted) return;
+      if (result.reason === 'settled' && isTerminalBatchStatus(result.snapshot.summary.status)) {
+        forgetDirectUpload(uploadId);
+      }
+      if (result.reason === 'timeout') {
+        setMessage({ type: 'warning', text: 'Automatic analysis paused after 10 minutes. Use Refresh status to continue unfinished errors.' });
+      }
+    }).catch((error) => {
+      if (!controller.signal.aborted) {
+        setMessage({ type: 'error', text: getApiErrorMessage(error, 'Could not continue analysis. Use Refresh status to resume.') });
+      }
+    }).finally(() => {
+      if (directRef.current === controller) {
+        directRef.current = null;
+        setPolling(false);
+      }
+    });
+  }, [applySnapshot, stopDirect, stopMonitoring]);
+
+  useEffect(() => {
+    const uploadId = Number(window.localStorage.getItem(LAST_DIRECT_UPLOAD_KEY));
+    if (!Number.isSafeInteger(uploadId) || uploadId <= 0) {
+      window.localStorage.removeItem(LAST_DIRECT_UPLOAD_KEY);
+      return undefined;
+    }
+    let active = true;
+    const generation = runGenerationRef.current;
+
+    getBatchSnapshot(uploadId).then((snapshot) => {
+      if (!active || generation !== runGenerationRef.current) return;
+      if (snapshot.summary.processingMode !== 'direct'
+        || isTerminalBatchStatus(snapshot.summary.status)) {
+        forgetDirectUpload(uploadId);
+        return;
+      }
+      applySnapshot(snapshot);
+      beginDirect(uploadId);
+    }).catch(() => {
+      if (active) window.localStorage.removeItem(LAST_DIRECT_UPLOAD_KEY);
+    });
+
+    return () => { active = false; };
+  }, [applySnapshot, beginDirect]);
+
+  const resetRun = useCallback(() => {
+    runGenerationRef.current += 1;
+    stopMonitoring();
+    stopDirect();
+    window.localStorage.removeItem(LAST_DIRECT_UPLOAD_KEY);
     setPreview(null);
     setSummary(null);
     setBatchErrors([]);
@@ -222,7 +306,13 @@ function App() {
     setAnalysis(null);
     setMessage(null);
     setPolling(false);
-  }, [stopMonitoring]);
+  }, [stopMonitoring, stopDirect]);
+
+  const handleNewAnalysis = () => {
+    setFile(null);
+    setSelectedPreviewIndex(0);
+    resetRun();
+  };
 
   const handleFileChange = (event) => {
     const nextFile = event.target.files?.[0] || null;
@@ -246,6 +336,7 @@ function App() {
     setBatchErrors([]);
     setAnalysis(null);
     stopMonitoring();
+    stopDirect();
 
     try {
       const result = await previewLog(file);
@@ -266,6 +357,7 @@ function App() {
 
     try {
       const result = await startBatchAnalysis(file);
+      const direct = result.processingMode === 'direct';
       const initialErrors = (result.errors || []).map((item) => ({
         id: item.id,
         lineNumber: item.line_number,
@@ -275,12 +367,13 @@ function App() {
       }));
       setSummary({
         uploadId: result.uploadId,
+        processingMode: result.processingMode || 'queue',
         filename: file.name,
         status: result.totalErrors ? 'processing' : 'no_errors',
         totalErrors: result.totalErrors,
         counts: {
-          pending: 0,
-          queued: result.queueSummary?.queued || 0,
+          pending: direct ? result.totalErrors : 0,
+          queued: direct ? 0 : result.queueSummary?.queued || 0,
           processing: 0,
           retrying: 0,
           completed: 0,
@@ -288,11 +381,15 @@ function App() {
           failed: 0,
         },
         progress: { finished: result.queueSummary?.failed || 0, percent: 0 },
-        recoverableCount: result.queueSummary?.failed || 0,
+        recoverableCount: direct ? result.totalErrors : result.queueSummary?.failed || 0,
       });
       setBatchErrors(initialErrors);
       setSelectedErrorId(initialErrors[0]?.id || null);
-      beginMonitoring(result.uploadId);
+      if (direct) {
+        beginDirect(result.uploadId);
+      } else {
+        beginMonitoring(result.uploadId);
+      }
     } catch (error) {
       setMessage({ type: 'error', text: getApiErrorMessage(error, 'Could not start analysis.') });
     } finally {
@@ -306,7 +403,14 @@ function App() {
     try {
       const snapshot = await getBatchSnapshot(summary.uploadId);
       applySnapshot(snapshot);
-      if (!isTerminalBatchStatus(snapshot.summary.status)) beginMonitoring(summary.uploadId);
+      if (snapshot.summary.processingMode === 'direct') {
+        if (isTerminalBatchStatus(snapshot.summary.status)) forgetDirectUpload(summary.uploadId);
+        if (!isTerminalBatchStatus(snapshot.summary.status) && !directRef.current) {
+          beginDirect(summary.uploadId);
+        }
+      } else if (!isTerminalBatchStatus(snapshot.summary.status)) {
+        beginMonitoring(summary.uploadId);
+      }
     } catch (error) {
       setMessage({ type: 'error', text: getApiErrorMessage(error, 'Could not refresh batch progress.') });
     }
@@ -340,11 +444,25 @@ function App() {
     setRetryingId(errorId);
     setMessage(null);
     try {
-      await retryError(errorId);
-      beginMonitoring(summary.uploadId);
+      if (summary.processingMode === 'direct') {
+        window.localStorage.setItem(LAST_DIRECT_UPLOAD_KEY, String(summary.uploadId));
+        await analyzeErrorDirect(errorId);
+      } else {
+        await retryError(errorId);
+        beginMonitoring(summary.uploadId);
+      }
     } catch (error) {
       setMessage({ type: 'error', text: getApiErrorMessage(error, 'Could not retry this error.') });
     } finally {
+      if (summary.processingMode === 'direct') {
+        try {
+          const snapshot = await getBatchSnapshot(summary.uploadId);
+          applySnapshot(snapshot);
+          if (isTerminalBatchStatus(snapshot.summary.status)) forgetDirectUpload(summary.uploadId);
+        } catch {
+          // Keep the analysis error visible; Refresh status can fetch the latest state.
+        }
+      }
       setRetryingId(null);
     }
   };
@@ -353,8 +471,12 @@ function App() {
     setRetryingBatch(true);
     setMessage(null);
     try {
-      await retryBatch(summary.uploadId);
-      beginMonitoring(summary.uploadId);
+      if (summary.processingMode === 'direct') {
+        beginDirect(summary.uploadId, true);
+      } else {
+        await retryBatch(summary.uploadId);
+        beginMonitoring(summary.uploadId);
+      }
     } catch (error) {
       setMessage({ type: 'error', text: getApiErrorMessage(error, 'Could not retry failed errors.') });
     } finally {
@@ -364,6 +486,7 @@ function App() {
 
   const previewByPosition = useMemo(() => preview?.errors || [], [preview]);
   const terminal = summary && isTerminalBatchStatus(summary.status);
+  const isDirect = summary?.processingMode === 'direct';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-violet-50">
@@ -415,7 +538,7 @@ function App() {
               <button onClick={handlePreview} disabled={!file || loadingPreview || startingBatch} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50">
                 {loadingPreview ? <><span className="spinner" />Reading log...</> : <><FaEye />Preview errors</>}
               </button>
-              <button onClick={handleStartBatch} disabled={!preview?.totalErrors || startingBatch} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 py-3 font-semibold text-white shadow-lg shadow-violet-200 transition hover:from-violet-700 hover:to-purple-700 disabled:cursor-not-allowed disabled:opacity-50">
+              <button onClick={handleStartBatch} disabled={!preview?.totalErrors || startingBatch || polling} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 py-3 font-semibold text-white shadow-lg shadow-violet-200 transition hover:from-violet-700 hover:to-purple-700 disabled:cursor-not-allowed disabled:opacity-50">
                 {startingBatch ? <><span className="spinner" />Starting...</> : <><FaCheckCircle />Analyse all errors</>}
               </button>
             </div>
@@ -424,8 +547,8 @@ function App() {
               <h3 className="mb-2 font-semibold text-violet-900">How it works</h3>
               <ol className="space-y-2 text-sm text-violet-800">
                 <li><strong>1.</strong> Preview detected errors</li>
-                <li><strong>2.</strong> Queue every error in one batch</li>
-                <li><strong>3.</strong> Watch worker progress</li>
+                <li><strong>2.</strong> Start analysis for every error</li>
+                <li><strong>3.</strong> Watch batch progress</li>
                 <li><strong>4.</strong> Open results or retry failures</li>
               </ol>
             </div>
@@ -436,12 +559,13 @@ function App() {
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">{summary ? 'Batch progress' : 'Detected errors'}</h2>
-                  <p className="mt-1 text-xs text-slate-500">{summary ? 'Each error is processed independently by the background worker.' : 'Preview the log before starting analysis.'}</p>
+                  <p className="mt-1 text-xs text-slate-500">{summary ? 'Each error is analysed independently.' : 'Preview the log before starting analysis.'}</p>
                 </div>
                 {summary && (
                   <div className="flex items-center gap-2">
                     {polling && <span className="text-xs font-medium text-amber-600">Updating...</span>}
                     <button onClick={refreshOnce} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-700 transition hover:bg-violet-50"><FaRedo />Refresh status</button>
+                    <button onClick={handleNewAnalysis} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100">New analysis</button>
                   </div>
                 )}
               </div>
@@ -476,7 +600,7 @@ function App() {
                               <span className="text-xs font-semibold text-slate-500">Error #{index + 1} · Line {item.line_number}</span>
                               {selectedPreviewIndex === index && <span className="text-xs font-semibold text-violet-600">Selected for preview</span>}
                             </div>
-                            <pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 font-mono text-sm text-slate-700">{item.redacted_text || item.raw_text}</pre>
+                            <pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 font-mono text-sm text-slate-700">{item.redacted_text}</pre>
                           </button>
                         ))}
                       </div>
@@ -502,8 +626,9 @@ function App() {
                         <span>Active: <strong>{(summary.counts?.queued || 0) + (summary.counts?.processing || 0) + (summary.counts?.retrying || 0) + (summary.counts?.pending || 0)}</strong></span>
                         <span>Failed: <strong>{(summary.counts?.failed || 0) + (summary.counts?.queueFailed || 0)}</strong></span>
                       </div>
+                      {isDirect && !terminal && <p className="mt-3 text-xs text-slate-500">Keep this page open while analysis runs. If interrupted, reopen it to resume unfinished errors.</p>}
                       {terminal && summary.recoverableCount > 0 && (
-                        <button onClick={handleRetryBatch} disabled={retryingBatch} className="mt-4 flex items-center gap-2 rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-200 disabled:opacity-50"><FaRedo />{retryingBatch ? 'Retrying...' : `Retry all failed (${summary.recoverableCount})`}</button>
+                        <button onClick={handleRetryBatch} disabled={retryingBatch || (isDirect && polling)} className="mt-4 flex items-center gap-2 rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-200 disabled:opacity-50"><FaRedo />{retryingBatch ? 'Retrying...' : `Retry all failed (${summary.recoverableCount})`}</button>
                       )}
                     </div>
 
@@ -515,13 +640,13 @@ function App() {
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <button onClick={() => { setSelectedErrorId(item.id); setAnalysis(null); }} className="min-w-0 text-left">
                                 <p className="text-sm font-semibold text-slate-800">Error #{index + 1} <span className="font-normal text-slate-400">· Line {item.lineNumber}</span></p>
-                                {previewItem && <p className="mt-1 max-w-xl truncate font-mono text-xs text-slate-500">{previewItem.redacted_text || previewItem.raw_text}</p>}
+                                {previewItem && <p className="mt-1 max-w-xl truncate font-mono text-xs text-slate-500">{previewItem.redacted_text}</p>}
                                 {item.failureReason && <p className="mt-1 text-xs text-red-600">{item.failureReason}</p>}
                               </button>
                               <div className="flex items-center gap-2">
                                 <StatusBadge status={item.status} />
                                 {item.status === 'completed' && item.hasAnalysis && <button onClick={() => openAnalysis(item.id)} className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700">View analysis</button>}
-                                {RETRYABLE_STATUSES.has(item.status) && <button onClick={() => handleRetryError(item.id)} disabled={retryingId === item.id} className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-200 disabled:opacity-50">{retryingId === item.id ? 'Retrying...' : 'Retry'}</button>}
+                                {(isDirect ? ['failed', 'queue_failed'].includes(item.status) : RETRYABLE_STATUSES.has(item.status)) && <button onClick={() => handleRetryError(item.id)} disabled={retryingId === item.id || (isDirect && polling)} className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-200 disabled:opacity-50">{retryingId === item.id ? 'Retrying...' : 'Retry'}</button>}
                               </div>
                             </div>
                           </div>

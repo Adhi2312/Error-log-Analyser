@@ -1,4 +1,5 @@
 // src/server.js
+require("./loadEnv");
 const express = require("express");
 const cors = require("cors");
 
@@ -10,17 +11,18 @@ const analyzeRouter = require("./routes/analyze");
 const app = express();
 
 // ---------- CORS ----------
-const allowedOrigins = [
-  "https://file-analyzer-frontend.onrender.com", // your deployed frontend
+const allowedOrigins = new Set([
+  ...String(process.env.CORS_ORIGIN || "").split(",").map((origin) => origin.trim()).filter(Boolean),
+  "https://file-analyzer-frontend.onrender.com",
   "http://localhost:5000",
   "http://localhost:3000",
   "http://localhost:3001"
-];
+]);
 
 const corsOptions = {
   origin: (origin, cb) => {
     // allow server-to-server / curl (no origin) and our known frontends
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.has(origin)) {
       return cb(null, true);
     }
     return cb(null, false);

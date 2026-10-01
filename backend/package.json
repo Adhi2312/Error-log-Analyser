@@ -6,6 +6,7 @@
     "migrate": "node src/db/migrate.js",
     "serve": "node src/server.js",
     "start": "npm run migrate && npm run serve",
+    "start:local": "node --env-file=.env src/db/migrate.js && node --env-file=.env src/server.js",
     "dev": "npm run migrate && nodemon src/server.js",
     "worker:run": "node src/worker.js",
     "worker": "npm run migrate && npm run worker:run",

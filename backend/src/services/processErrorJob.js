@@ -209,4 +209,5 @@ function createProcessErrorJob({
 module.exports = {
   createProcessErrorJob,
   getAttemptDetails,
+  saveAnalysis,
 };

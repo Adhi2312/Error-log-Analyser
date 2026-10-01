@@ -5,6 +5,7 @@ function createUploadHandler({
   parseLogFile,
   computeFileHash,
   enqueueError,
+  processingMode = "queue",
   logger = console,
 }) {
   return async function handleUpload(req, res) {
@@ -68,6 +69,15 @@ function createUploadHandler({
       transactionStarted = false;
       releaseClient();
 
+      if (processingMode === "direct") {
+        return res.status(202).json({
+          uploadId,
+          processingMode,
+          totalErrors: createdErrors.length,
+          errors: createdErrors,
+        });
+      }
+
       let queuedCount = 0;
       let queueFailedCount = 0;
 
@@ -121,6 +131,7 @@ function createUploadHandler({
 
       return res.status(202).json({
         uploadId,
+        processingMode,
         totalErrors: createdErrors.length,
         queueSummary: {
           queued: queuedCount,

@@ -1,3 +1,4 @@
+require("./loadEnv");
 const { Worker } = require("bullmq");
 const IORedis = require("ioredis");
 const { redact } = require("./services/redactor");

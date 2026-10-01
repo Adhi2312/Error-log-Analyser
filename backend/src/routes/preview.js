@@ -21,7 +21,6 @@ router.post("/", async (req, res) => {
     // Redact sensitive info
     const redactedErrors = errors.map((err) => ({
       line_number: err.line_number,
-      raw_text: err.raw_text,
       redacted_text: redact(err.raw_text),
     }));
 

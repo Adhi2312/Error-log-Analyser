@@ -119,6 +119,7 @@ test("commits all database rows before queueing compact jobs", async () => {
   assert.equal(response.statusCode, 202);
   assert.deepEqual(response.body, {
     uploadId: 41,
+    processingMode: "queue",
     totalErrors: 1,
     queueSummary: { queued: 1, failed: 0 },
     errors: [{ id: 73, line_number: 7, status: "queued" }],
@@ -135,6 +136,25 @@ test("commits all database rows before queueing compact jobs", async () => {
   assert.equal(harness.statusUpdates.length, 1);
   assert.match(harness.statusUpdates[0].sql, /status = 'queued'/);
   assert.deepEqual(harness.statusUpdates[0].params, [73]);
+  assert.deepEqual(harness.deletedPaths, [uploadedFile.path]);
+});
+
+test("direct mode persists pending errors without requiring a queue", async () => {
+  const harness = createHarness({ processingMode: "direct", enqueueError: undefined });
+  const response = createResponse();
+
+  await harness.handler({ file: uploadedFile }, response);
+
+  assert.equal(response.statusCode, 202);
+  assert.deepEqual(response.body, {
+    uploadId: 41,
+    processingMode: "direct",
+    totalErrors: 1,
+    errors: [{ id: 73, line_number: 7, status: "pending" }],
+  });
+  assert.deepEqual(harness.enqueuedJobs, []);
+  assert.deepEqual(harness.statusUpdates, []);
+  assert.equal(harness.getReleaseCount(), 1);
   assert.deepEqual(harness.deletedPaths, [uploadedFile.path]);
 });
 

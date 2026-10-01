@@ -26,7 +26,7 @@ function errorMessage(error) {
   return String(error?.message || error).slice(0, 500);
 }
 
-function createBatchHandlers({ pool, ensureErrorQueued, logger = console }) {
+function createBatchHandlers({ pool, ensureErrorQueued, processingMode = "queue", logger = console }) {
   async function queueRecoverableError(errorRecord) {
     let queueResult;
 
@@ -135,6 +135,7 @@ function createBatchHandlers({ pool, ensureErrorQueued, logger = console }) {
 
       return res.json({
         uploadId: row.id,
+        processingMode,
         filename: row.filename,
         filesize: row.filesize,
         uploadedAt: row.uploaded_at,

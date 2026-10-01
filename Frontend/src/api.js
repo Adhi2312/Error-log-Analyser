@@ -31,6 +31,13 @@ export async function getErrorAnalysis(errorId) {
   return response.data;
 }
 
+export async function analyzeErrorDirect(errorId) {
+  const response = await api.post(`/api/errors/${errorId}/analyze`, null, {
+    timeout: 60000,
+  });
+  return response.data;
+}
+
 export async function retryError(errorId) {
   const response = await api.post(`/api/errors/${errorId}/retry`);
   return response.data;
@@ -49,6 +56,7 @@ const FRIENDLY_API_ERRORS = {
   queue_unavailable: 'The processing queue is unavailable. Try again shortly.',
   no_recoverable_errors: 'There are no failed errors to retry.',
   job_already_active: 'This error is already being processed.',
+  analysis_failed: 'Analysis failed for this error. You can retry it.',
 };
 
 export function getApiErrorMessage(error, fallback) {
@@ -58,4 +66,3 @@ export function getApiErrorMessage(error, fallback) {
     || error?.message
     || fallback;
 }
-

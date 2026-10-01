@@ -1,3 +1,4 @@
+require("../loadEnv");
 const { pool } = require("../db");
 const { migrateDatabase } = require("./migrationRunner");
 

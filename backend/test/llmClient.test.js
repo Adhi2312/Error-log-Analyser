@@ -66,6 +66,25 @@ test("rejects a missing NVIDIA API key without making a request", async () => {
   assert.equal(called, false);
 });
 
+test("explains NVIDIA HTTP 410 as an access issue to check", async () => {
+  const callLLM = createLLMClient({
+    httpClient: {
+      post: async () => {
+        const error = new Error("Gone");
+        error.response = { status: 410 };
+        throw error;
+      },
+    },
+    env: { NVIDIA_API_KEY: "test-api-key" },
+    logger: { error() {} },
+  });
+
+  await assert.rejects(
+    callLLM("ERROR failed"),
+    /HTTP 410.*Public API Endpoints access/
+  );
+});
+
 test("uses a provider and model identity suitable for cache namespacing", () => {
   assert.deepEqual(
     getLLMIdentity({ NVIDIA_NIM_MODEL: "meta/custom-model" }),

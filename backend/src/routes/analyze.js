@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { callLLM } = require("../services/llmClient");
+const { redact } = require("../services/redactor");
 
 router.post("/", async (req, res) => {
   try {
@@ -12,7 +13,7 @@ router.post("/", async (req, res) => {
     }
 
     // Call LLM directly
-    const analysis = await callLLM(redacted_text);
+    const analysis = await callLLM(redact(redacted_text));
 
     return res.json({
       source: "llm",
@@ -21,7 +22,10 @@ router.post("/", async (req, res) => {
 
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "llm_error" });
+    const message = typeof err.message === "string" && err.message.startsWith("NVIDIA ")
+      ? err.message
+      : undefined;
+    return res.status(502).json({ error: "llm_error", ...(message && { message }) });
   }
 });
 

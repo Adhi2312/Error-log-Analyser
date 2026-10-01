@@ -18,7 +18,7 @@ Error Log Analyzer is a full-stack application that helps developers quickly ins
 - Detecting error entries
 - Redacting sensitive information
 - Generating structured AI-assisted analysis
-- Supporting asynchronous processing using BullMQ and Redis
+- Supporting both background processing with BullMQ/Redis and a simpler direct mode
 
 ---
 
@@ -29,6 +29,7 @@ Error Log Analyzer is a full-stack application that helps developers quickly ins
 - 🔒 Sensitive data redaction
 - 🤖 AI-assisted root cause analysis
 - ⚡ Background processing using BullMQ
+- 🧪 Direct mode for a small hosted demo without Redis or a worker
 - 💾 PostgreSQL persistence
 - 🔄 Automatic versioned database migrations
 - 🎨 Responsive React UI
@@ -144,8 +145,7 @@ ERROR-LOG-ANALYZER/
 3. Errors are extracted.
 4. Sensitive information is redacted.
 5. Preview is displayed.
-6. Every detected error is queued for background processing.
-7. Workers analyze errors independently.
+6. In the default queue mode, every detected error is queued for background processing and workers analyze them independently. In direct mode, the browser requests each saved error's analysis from the API in turn.
 8. Batch progress and individual results are displayed.
 9. Analysis is stored for future reference.
 
@@ -157,20 +157,47 @@ ERROR-LOG-ANALYZER/
 
 ```bash
 git clone https://github.com/Adhi2312/Error-log-Analyser.git
-cd ERROR-LOG-ANALYZER
+cd Error-log-Analyser
 ```
 
 ### Backend
 
 ```bash
-cd Backend
+cd backend
 npm install
 npm run migrate
 npm start
 ```
 
 Copy `backend/.env.example` to `backend/.env` and set `NVIDIA_API_KEY` before
-starting the worker. The default hosted model is `openai/gpt-oss-20b`.
+starting analysis. The default hosted model is `openai/gpt-oss-20b`.
+
+For a local backend run, set `ANALYSIS_MODE=direct` and a working `DATABASE_URL`
+in `backend/.env`, then run `npm run start:local` from `backend` with Node 20.12
+or newer. The API, migrations, and worker load `backend/.env` regardless of the
+shell's current directory. Use
+`localhost` in the database URL when PostgreSQL runs on your machine; the
+`postgres` and `redis` hostnames in the example are for Docker Compose.
+The regular `npm start` also loads the file when present; hosting environments
+can supply variables directly without it.
+
+### Direct mode for a small deployment
+
+Set `ANALYSIS_MODE=direct` in the API environment, together with `DATABASE_URL`,
+`NVIDIA_API_KEY`, and `CORS_ORIGIN` (the frontend's full origin). Run the API with
+`npm start` so migrations are applied. Set `REACT_APP_API_URL` to the API's public
+URL when building the frontend. Direct mode needs PostgreSQL but does not need
+Redis, a cache, or a worker process.
+
+Uploading saves every detected error in PostgreSQL. The browser then asks the API
+to analyze each error separately; the API reads the stored text and **redacts it
+on the server before sending it to NVIDIA NIM**. The preview response contains
+only redacted error text. Progress and results stay in PostgreSQL. The browser
+needs to remain open to start the remaining requests, although reopening the
+page resumes the most recent unfinished direct upload. Failed errors can be
+retried from the results page. This mode is intended for a small demo; for
+unattended processing and automatic retries, keep the default `ANALYSIS_MODE=queue`
+and run Redis plus the worker.
 
 ### Frontend
 
