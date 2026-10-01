@@ -199,6 +199,22 @@ retried from the results page. This mode is intended for a small demo; for
 unattended processing and automatic retries, keep the default `ANALYSIS_MODE=queue`
 and run Redis plus the worker.
 
+### Deploy on Render
+
+The root `render.yaml` deploys the portfolio configuration in direct mode:
+
+- a free Node web service for the API;
+- a free static site for the React frontend; and
+- a free Render PostgreSQL database in the same region as the API.
+
+In Render, choose **New > Blueprint**, connect this repository, and select the
+`main` branch. Render prompts for `NVIDIA_API_KEY`; paste the key there and do
+not add it to Git. The Blueprint supplies the database connection, frontend API
+URL, CORS origin, model, and health check automatically.
+
+Render's free PostgreSQL databases are intended for demos and expire after 30
+days. Upgrade the database or replace it before relying on it for permanent data.
+
 ### Frontend
 
 ```bash
